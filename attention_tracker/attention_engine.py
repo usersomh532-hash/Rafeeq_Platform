@@ -638,6 +638,106 @@ def compute_score(ear: float, ratio: float, gaze: str, drowsy: bool,
     return max(0, min(100, score)), cause
 
 
+def compute_score_with_baseline(ear: float, ratio: float, gaze: str, drowsy: bool,
+                            head_yaw: float, head_pitch: float, head_roll: float,
+                            gaze_h_angle: float, gaze_v_angle: float,
+                            is_looking_away: bool, baseline_data: dict = None) -> tuple[int, str]:
+    """
+    يحسب درجة الانتباه 0–100 وسبب التشتت مع دعم بيانات المعايرة الشخصية.
+    """
+    score = 100
+    cause = "none"
+    
+    # ✅ استخدام العتبات الشخصية إذا كانت متاحة
+    if baseline_data:
+        ear_threshold = baseline_data.get('ear_threshold_personal', EAR_THRESHOLD)
+        yaw_threshold = baseline_data.get('yaw_threshold_personal', YAW_THRESHOLD)
+        pitch_threshold = baseline_data.get('pitch_threshold_personal', PITCH_THRESHOLD)
+        roll_threshold = baseline_data.get('roll_threshold_personal', ROLL_THRESHOLD)
+        gaze_h_threshold = baseline_data.get('gaze_horizontal_threshold_personal', GAZE_HORIZONTAL_THRESHOLD)
+        gaze_v_threshold = baseline_data.get('gaze_vertical_threshold_personal', GAZE_VERTICAL_THRESHOLD)
+    else:
+        ear_threshold = EAR_THRESHOLD
+        yaw_threshold = YAW_THRESHOLD
+        pitch_threshold = PITCH_THRESHOLD
+        roll_threshold = ROLL_THRESHOLD
+        gaze_h_threshold = GAZE_HORIZONTAL_THRESHOLD
+        gaze_v_threshold = GAZE_VERTICAL_THRESHOLD
+
+    # ── نعاس (25 نقطة) ────────────────────────────────────────
+    if drowsy:
+        score -= 25
+        cause  = "drowsy"
+    elif ear < ear_threshold + 0.04:
+        score -= 10
+
+    # ── اتجاه الرأس (35 نقطة) - Yaw, Pitch, Roll ────────────
+    # Yaw (التفات يمين/يسار)
+    if abs(head_yaw) > yaw_threshold:
+        penalty = min(20, int((abs(head_yaw) - yaw_threshold) * 1.5))
+        score -= penalty
+        if cause == "none":
+            cause = "head_turn"
+    elif abs(head_yaw) > (yaw_threshold * 0.7):  # تحذير عند 70% من العتبة
+        score -= 5
+    
+    # Pitch (النظر للأعلى/الأسفل)
+    if abs(head_pitch) > pitch_threshold:
+        penalty = min(10, int((abs(head_pitch) - pitch_threshold) * 1.0))
+        score -= penalty
+        if cause == "none":
+            cause = "head_turn"
+    elif abs(head_pitch) > (pitch_threshold * 0.7):  # تحذير عند 70% من العتبة
+        score -= 3
+    
+    # Roll (الإمالة)
+    if abs(head_roll) > roll_threshold:
+        penalty = min(5, int((abs(head_roll) - roll_threshold) * 0.5))
+        score -= penalty
+        if cause == "none":
+            cause = "head_turn"
+    
+    # ── اتجاه النظر (25 نقطة) ────────────────────────────────
+    if gaze in ("left", "right"):
+        score -= 15
+        if cause == "none":
+            cause = "gaze"
+    elif gaze == "unknown":
+        score -= 5
+    
+    # Additional penalty based on gaze angles
+    if abs(gaze_h_angle) > gaze_h_threshold:
+        penalty = min(10, int((abs(gaze_h_angle) - gaze_h_threshold) * 0.5))
+        score -= penalty
+        if cause == "none":
+            cause = "gaze"
+    
+    if abs(gaze_v_angle) > gaze_v_threshold:
+        penalty = min(5, int((abs(gaze_v_angle) - gaze_v_threshold) * 0.3))
+        score -= penalty
+        if cause == "none":
+            cause = "gaze"
+    
+    # ── النظر بعيداً (15 نقطة) ────────────────────────────────
+    if is_looking_away:
+        score -= 15
+        if cause == "none":
+            cause = "looking_away"
+    
+    # ── التفات الرأس التقليدي (احتياطي) ────────────────────────
+    if ratio < NOSE_EAR_RATIO_MIN or ratio > NOSE_EAR_RATIO_MAX:
+        deviation = max(
+            abs(ratio - NOSE_EAR_RATIO_MIN),
+            abs(ratio - NOSE_EAR_RATIO_MAX)
+        )
+        penalty = min(10, int(deviation * 30))
+        score  -= penalty
+        if cause == "none":
+            cause = "head_turn"
+
+    return max(0, min(100, score)), cause
+
+
 def build_warning_nudge(name: str, cause: str) -> str:
     """تنبيه لطيف باسم الطالب عند أول بلوغ مرحلة التحذير (قبل احتساب التشتت الملحوظ)."""
     first = name.split()[0] if (name and name.strip()) else "صديقي"
@@ -1045,12 +1145,12 @@ class AttentionTracker:
             # ✅ إذا كان drowsy، تغيير السبب إلى drowsy
             if drowsy:
                 cause = "drowsy"
-            # ✅ استخدام compute_score المحسّن مع المعاملات الجديدة
-            score, cause = compute_score(
+            # ✅ استخدام compute_score المحسّن مع المعاملات الجديدة + بيانات المعايرة
+            score, cause = compute_score_with_baseline(
                 ear, face_ratio, gaze_zone, drowsy,
                 head_yaw, head_pitch, head_roll,
                 gaze_h_angle, gaze_v_angle,
-                looking_away
+                looking_away, self.baseline_data
             )
             # ✅ سجل تشخيصي للقيم المستخدمة في حساب السكور
             if score == 90 or score == 0:
@@ -1200,11 +1300,11 @@ class AttentionTracker:
             gaze_v_angle = 0.0
             is_looking_away = False
 
-            score, cause = compute_score(
+            score, cause = compute_score_with_baseline(
                 ear, ratio, gaze, drowsy,
                 head_yaw, head_pitch, head_roll,
                 gaze_h_angle, gaze_v_angle,
-                is_looking_away
+                is_looking_away, self.baseline_data
             )
 
             # تعديل السكور بناءً على تمركز الوجه

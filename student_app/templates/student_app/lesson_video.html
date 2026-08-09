@@ -405,8 +405,6 @@ var checkpointCheckInterval = null;
 // ✅ تتبع آخر مستوى ظهر بناءً على نسبة التشتت
 var lastLevel1DistractionTime = 0; // آخر وقت تشتت ظهر فيه المستوى 1
 var lastLevel2DistractionTime = 0; // آخر وقت تشتت ظهر فيه المستوى 2
-var level2Shown = false; // هل ظهرت نافذة المستوى 2 من قبل
-var level3Shown = false; // هل ظهرت نافذة المستوى 3 من قبل
 var voicesLoaded = false; // هل تم تحميل الأصوات
 
 // تحميل الأصوات مسبقاً عند تحميل الصفحة
@@ -526,13 +524,8 @@ function selectCheckpointAnswer(answer) {
   var isCorrect = (answer === currentCheckpoint.correct_answer);
   console.log('[Checkpoint] Answer is correct:', isCorrect);
 
-  // ✅ لا نقوم بتصفير وقت التشتت عند الإجابة الصحيحة - نحفظه للاستئناف
-  // الإجابة الصحيحة تقلل الاحتمال تدريجياً فقط
-  if (isCorrect) {
-    // ✅ تحديث الإشارة المعرفية (الأداء التفاعلي - 60%)
-    updateCognitiveSignal(isCorrect, Date.now());
-    console.log('[Checkpoint] Correct answer - cognitive signal updated, distraction time preserved');
-  }
+  // ✅ تحديث الإشارة المعرفية (الأداء التفاعلي - 60%)
+  updateCognitiveSignal(isCorrect, Date.now());
 
   // ✅ حساب النوافذ الزمنية للمستويات الثلاثة بناءً على مدة الفيديو
   var videoDuration = videoElement && isFinite(videoElement.duration) && videoElement.duration > 0 ? videoElement.duration : 600;
@@ -833,19 +826,12 @@ function showCheckpointOnDistraction() {
   // ✅ فحص العتبة الزمنية قبل إظهار السؤال التكيفي
   var videoDuration = videoElement.duration || 0;
   var level1Window = Math.max(5, Math.min(55, videoDuration * 0.03)); // المستوى 1: 3% من مدة الجلسة
-  var level1SecondWindow = Math.max(5, Math.min(55, videoDuration * 0.06)); // المستوى 1 الثاني: 6% أخرى من مدة الجلسة
 
-  console.log('[Checkpoint] Checking - distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Threshold 1:', level1Window.toFixed(2) + 's', 'Threshold 2:', level1SecondWindow.toFixed(2) + 's', 'Video duration:', videoDuration + 's');
+  console.log('[Checkpoint] Checking - distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Threshold:', level1Window.toFixed(2) + 's', 'Video duration:', videoDuration + 's');
 
-  // ✅ تكرار الأسئلة التكيفية عند 3% و 9% فقط من مدة الجلسة (3% + 6%)
-  // حساب عدد مرات الوصول إلى 3% من مدة الجلسة
-  var level1Multiplier = Math.floor(_probabilisticModel.totalDistractionTime / level1Window);
-  var lastLevel1Multiplier = Math.floor(lastLevel1DistractionTime / level1Window);
-
-  // ✅ إظهار السؤال التكيفي فقط عند 3% (multiplier=1) و 9% (multiplier=3)
-  // لا تظهر عند 6% (multiplier=2) أو 12% (multiplier=4)
-  if (level1Multiplier <= lastLevel1Multiplier || (level1Multiplier !== 1 && level1Multiplier !== 3)) {
-    console.log('[Checkpoint] Not showing checkpoint - distraction time not at 3% or 9% threshold:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Multiplier:', level1Multiplier, 'Last multiplier:', lastLevel1Multiplier);
+  // ✅ إظهار السؤال التكيفي فقط عند 3% من مدة الجلسة (مرة واحدة)
+  if (_probabilisticModel.totalDistractionTime < level1Window || _alertState.level1PopupShown) {
+    console.log('[Checkpoint] Not showing checkpoint - distraction time not at 3% threshold or already shown:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Threshold:', level1Window.toFixed(2) + 's', 'Already shown:', _alertState.level1PopupShown);
     return false;
   }
 
@@ -855,9 +841,10 @@ function showCheckpointOnDistraction() {
   var checkpoint = findNearestCheckpointBeforeTime(currentTime);
 
   if (checkpoint) {
-    console.log('[Checkpoint] Showing checkpoint on distraction at time:', currentTime, 'nearest checkpoint:', checkpoint.video_timestamp, 'Distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Threshold:', level1Window.toFixed(2) + 's', 'Multiplier:', level1Multiplier);
+    console.log('[Checkpoint] Showing checkpoint on distraction at time:', currentTime, 'nearest checkpoint:', checkpoint.video_timestamp, 'Distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Threshold:', level1Window.toFixed(2) + 's');
     showCheckpointPopup(checkpoint);
-    lastLevel1DistractionTime = _probabilisticModel.totalDistractionTime; // تحديث آخر وقت تشتت ظهر فيه المستوى 1
+    _alertState.level1PopupShown = true;
+    lastLevel1DistractionTime = _probabilisticModel.totalDistractionTime;
     return true;
   } else {
     console.log('[Checkpoint] No suitable checkpoint found for current time:', currentTime);
@@ -932,6 +919,8 @@ var _alertState = {
   level1CheckpointShown: false, // المستوى 1: 3% من مدة الجلسة
   level2CheckpointShown: false, // المستوى 2: 15% من مدة الجلسة
   level3CheckpointShown: false,  // المستوى 3: 45% من مدة الجلسة
+  level1PopupShown: false, // ✅ هل تم إظهار نافذة المستوى 1
+  level2PopupShown: false, // ✅ هل تم إظهار نافذة المستوى 2
   lastLevel2Threshold: 0, // ✅ آخر عتبة تم الوصول إليها للمستوى الثاني (15%، 30%، 45%، إلخ)
   lastLevel1TriggerTime: 0, // ✅ وقت آخر ظهور للمستوى 1
   lastPopupTriggerTime: 0,
@@ -1053,7 +1042,7 @@ function showPopupByLevel(targetLevel) {
         return false;
     } else if (targetLevel === 2) {
         // ✅ نافذة المساعد الذكي تظهر مرة واحدة فقط عند 15% من مدة الجلسة
-        if (level2Shown) {
+        if (_alertState.level2PopupShown) {
             console.log('[Popup] Level 2 popup already shown - skipping');
             return false;
         }
@@ -1071,22 +1060,13 @@ function showPopupByLevel(targetLevel) {
         console.log('[Popup] Showing Level 2 popup (AI Assistant) - Final popup');
         _alertState.distractionTimerPaused = true;
         _alertState.lastPopupTriggerTime = now;
-        level2Shown = true; // تحديث أن نافذة المستوى 2 ظهرت
+        _alertState.level2PopupShown = true;
         showAIAssistantPopup();
         return true;
     } else if (targetLevel === 3) {
         // ✅ نافذة المستوى 3 تظهر لمرة واحدة وأخيرة عند 45% من مدة الجلسة
-        if (level3Shown) {
+        if (_alertState.level3PopupShown) {
             console.log('[Popup] Level 3 popup already shown - skipping');
-            return false;
-        }
-
-        var videoDuration = videoElement && videoElement.duration ? videoElement.duration : 600;
-        var level3Window = Math.max(5, videoDuration * 0.45); // المستوى 3: أدنى 5 ثواني، أو 45% من مدة الجلسة
-
-        // ✅ إظهار نافذة المستوى 3 فقط عند الوصول إلى 45% من مدة الجلسة
-        if (_probabilisticModel.totalDistractionTime < level3Window) {
-            console.log('[Popup] Not showing Level 3 popup - distraction time not yet at 45% threshold:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Threshold:', level3Window.toFixed(2) + 's');
             return false;
         }
 
@@ -1094,7 +1074,7 @@ function showPopupByLevel(targetLevel) {
         console.log('[Popup] Showing Level 3 popup (Learning style change) - Final popup');
         _alertState.distractionTimerPaused = true;
         _alertState.lastPopupTriggerTime = now;
-        level3Shown = true; // تحديث أن نافذة المستوى 3 ظهرت
+        _alertState.level3PopupShown = true;
         showLevel3Popup();
         return true;
     }
@@ -1111,11 +1091,21 @@ function closePopupByLevel(level) {
             currentCheckpoint = null;
         }
     } else if (level === 2) {
+        // ✅ إيقاف صوت المساعد الذكي قبل إغلاق النافذة
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            console.log('[AI Assistant] TTS stopped on popup close');
+        }
         var popup = document.getElementById('aiAssistantPopup');
         if (popup) {
             popup.classList.add('d-none');
         }
     } else if (level === 3) {
+        // ✅ إيقاف صوت المستوى الثالث قبل إغلاق النافذة
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            console.log('[Level 3] TTS stopped on popup close');
+        }
         var popup = document.getElementById('level3Popup');
         if (popup) {
             popup.classList.add('d-none');
@@ -1803,8 +1793,8 @@ function updateCognitiveSignal(isCorrect, now) {
   var sessionProgress = videoDuration > 0 ? (elapsedTime / videoDuration) : 0; // نسبة التقدم الفعلية
 
   // ✅ Gatekeeper: منع معالجة الإشارات المعرفية في المستوى 1 (3%)
-  if (sessionProgress < 0.15) {
-    console.log('[Gatekeeper] Session progress < 15% (Level 1). Cognitive signals ignored. Progress:', (sessionProgress * 100).toFixed(1) + '%', 'Elapsed:', elapsedTime.toFixed(1) + 's', 'Total:', videoDuration.toFixed(1) + 's');
+  if (sessionProgress < 0.03) {
+    console.log('[Gatekeeper] Session progress < 3% (Level 1). Cognitive signals ignored. Progress:', (sessionProgress * 100).toFixed(1) + '%', 'Elapsed:', elapsedTime.toFixed(1) + 's', 'Total:', videoDuration.toFixed(1) + 's');
     return; // ✅ تجاهل الإشارات المعرفية في المستوى 1
   }
 
@@ -1901,32 +1891,105 @@ function resumeVideoAudioAfterTTS() {
 // Attention State Processing
 // ══════════════════════════════════════════════════════════════
 
-function updateBehavioralDisengagementProbability(attentive, score, elapsedSeconds, distractionLevel) {
-  var safeScore = Number.isFinite(score) ? score : (attentive ? 85 : 45);
+// ✅ دالة تحديث الاحتمال بناءً على المؤشر المركب (Composite Disengagement Score)
+// المؤشر المركب يعتمد على: الأداء التفاعلي (60%) + السلوك البصري والحركي (40%)
+// المستوى 1: إشارات سلوكية فقط (100% سلوك، 0% تفاعلي)
+// المستوى 2+: إشارات سلوكية + تفاعلية (40% سلوك، 60% تفاعلي)
+// ✅ استخدام المعايرة الشخصية لمقارنة حالة التشتت بالسلوك الطبيعي
+function updateProbabilisticModel(attentive, score, now, distractionLevel) {
+    distractionLevel = distractionLevel || 1; // المستوى الافتراضي هو 1
 
-  if (!attentive) {
-    var behavioralScore = Math.max(0, Math.min(1, (100 - safeScore) / 100));
-
-    if (_probabilisticModel.baseline && _probabilisticModel.baseline.has_baseline) {
-      var baseline = _probabilisticModel.baseline;
-      var baselineMean = baseline.gaze_horizontal_mean || 0.5;
-      var baselineStd = baseline.gaze_horizontal_std || 0.1;
-      var deviation = Math.abs(behavioralScore - baselineMean) / (baselineStd || 0.1);
-      behavioralScore = deviation < 1 ? behavioralScore * 0.5 : behavioralScore * 1.2;
-      behavioralScore = Math.max(0, Math.min(1, behavioralScore));
-      console.log('[Baseline] Video behavior compared with calibration. Deviation:', deviation.toFixed(3), 'Adjusted score:', behavioralScore.toFixed(3));
+    if (_probabilisticModel.windowStartTime === null) {
+        _probabilisticModel.windowStartTime = now;
     }
 
-    var interactiveScore = _probabilisticModel.cognitiveSignal > 0 ? _probabilisticModel.cognitiveSignal : 0;
-    var compositeScore = distractionLevel === 1
-      ? behavioralScore
-      : (behavioralScore * 0.4) + (interactiveScore * 0.6);
+    var timeSinceLastUpdate = _probabilisticModel.lastUpdateTime ? (now - _probabilisticModel.lastUpdateTime) / 1000 : 0.1;
+    _probabilisticModel.lastUpdateTime = now;
 
-    _probabilisticModel.currentProbability = Math.min(1, _probabilisticModel.currentProbability + (compositeScore * 0.05 * elapsedSeconds));
-    _probabilisticModel.disengagementLoad += _probabilisticModel.currentProbability * elapsedSeconds;
-  } else {
-    _probabilisticModel.currentProbability = Math.max(0, _probabilisticModel.currentProbability - (0.005 * elapsedSeconds));
-  }
+    if (!attentive) {
+        // ✅ تراكم وقت التشتت المستمر (Continuous Distraction Time)
+        // ✅ إيقاف التراكم إذا كانت نافذة مفتوحة
+        if (!_alertState.distractionTimerPaused) {
+            _probabilisticModel.totalDistractionTime += timeSinceLastUpdate;
+        }
+
+        // ✅ حساب حِمل التشتت الاحتمالي (Cumulative Disengagement Evidence)
+        // حِمل التشتت = احتمال التشتت في تلك اللحظة × المدة الزمنية
+        var instantDisengagementProb = _probabilisticModel.currentProbability;
+        var disengagementLoad = instantDisengagementProb * timeSinceLastUpdate;
+        _probabilisticModel.disengagementLoad += disengagementLoad;
+
+        // ✅ حساب المؤشر المركب (Composite Disengagement Score)
+        var behavioralScore = (100 - score) / 100; // السلوك البصري والحركي
+
+        // ✅ تعديل السلوك البصري والحركي بناءً على المعايرة الشخصية
+        if (_probabilisticModel.baseline && _probabilisticModel.baseline.has_baseline) {
+            var baseline = _probabilisticModel.baseline;
+            // ✅ حساب الانحراف عن السلوك الطبيعي
+            // إذا كان الانحراف صغيراً، فهذا قد يكون طبيعياً للطالب
+            // إذا كان الانحراف كبيراً، فهذا يشير إلى تشتت حقيقي
+            var baselineMean = baseline.gaze_horizontal_mean || 0.5; // متوسط النظر في المعايرة (استخدام الحقل الصحيح)
+            var baselineStd = baseline.gaze_horizontal_std || 0.1; // الانحراف المعياري في المعايرة (استخدام الحقل الصحيح)
+
+            // ✅ تعديل السلوك البصري بناءً على الانحراف عن المعايرة
+            // إذا كان السلوك الحالي قريباً من المتوسط في المعايرة، قلل تأثيره
+            // إذا كان السلوك الحالي بعيداً عن المتوسط، زد تأثيره
+            var deviation = Math.abs(behavioralScore - baselineMean);
+            var normalizedDeviation = deviation / (baselineStd || 0.1); // الانحراف المعياري
+
+            // ✅ تعديل السلوك بناءً على الانحراف
+            // إذا كان الانحراف < 1، فهذا طبيعي (قلل التأثير)
+            // إذا كان الانحراف >= 1، فهذا غير طبيعي (زد التأثير)
+            if (normalizedDeviation < 1.0) {
+                behavioralScore = behavioralScore * 0.5; // قلل التأثير لأنه طبيعي
+                console.log('[Baseline] Behavior within normal range. Deviation:', normalizedDeviation.toFixed(3), 'Adjusted score:', behavioralScore.toFixed(3));
+            } else {
+                behavioralScore = behavioralScore * 1.2; // زد التأثير لأنه غير طبيعي
+                console.log('[Baseline] Behavior outside normal range. Deviation:', normalizedDeviation.toFixed(3), 'Adjusted score:', behavioralScore.toFixed(3));
+            }
+        } else {
+            console.log('[Baseline] No baseline available, using general thresholds');
+        }
+
+        var interactiveScore = _probabilisticModel.cognitiveSignal >= 0 ? _probabilisticModel.cognitiveSignal : 0; // الأداء التفاعلي
+
+        var compositeScore;
+        if (distractionLevel === 1) {
+            // ✅ المستوى 1: إشارات سلوكية فقط (100% سلوك، 0% تفاعلي)
+            compositeScore = behavioralScore; // 100% سلوك
+            console.log('[Probabilistic] Level 1 - Behavioral signals only. Score:', behavioralScore.toFixed(3));
+        } else {
+            // ✅ المستوى 2+: إشارات سلوكية + تفاعلية (40% سلوك، 60% تفاعلي)
+            compositeScore = (behavioralScore * 0.4) + (interactiveScore * 0.6); // المؤشر المركب
+            console.log('[Probabilistic] Level', distractionLevel, '- Composite score. Behavioral (40%):', behavioralScore.toFixed(3), 'Interactive (60%):', interactiveScore.toFixed(3), 'Composite:', compositeScore.toFixed(3));
+        }
+
+        // ✅ زيادة الاحتمال بناءً على المؤشر المركب
+        var probabilityIncrease = compositeScore * 0.05 * timeSinceLastUpdate; // معدل زيادة
+        _probabilisticModel.currentProbability = Math.min(1.0, _probabilisticModel.currentProbability + probabilityIncrease);
+
+        console.log('[Probabilistic] Distraction detected. Probability:', _probabilisticModel.currentProbability.toFixed(3), 'Total time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Disengagement Load:', _probabilisticModel.disengagementLoad.toFixed(3));
+    } else {
+        // ✅ تقليل الاحتمال تدريجياً عند الانتباه (معدل أبطأ بكثير لمنع التصفير الفوري)
+        var probabilityDecrease = 0.005 * timeSinceLastUpdate; // معدل تقليل أبطأ بكثير
+        _probabilisticModel.currentProbability = Math.max(0.0, _probabilisticModel.currentProbability - probabilityDecrease);
+
+        // ✅ تراكم وقت الانتباه المستمر (لطلاب ADHD)
+        _probabilisticModel.continuousAttentionTime += timeSinceLastUpdate;
+
+        // ✅ تصفير وقت التشتت والاحتمال عند استمرار الانتباه لمدة أكثر من 3 ثواني فقط
+        if (_probabilisticModel.continuousAttentionTime > _probabilisticModel.sustainedAttentionThreshold) {
+            console.log('[Probabilistic] Sustained attention threshold reached (>3s). Resetting distraction time and probability.');
+            _probabilisticModel.totalDistractionTime = 0;
+            _probabilisticModel.currentProbability = 0;
+            _probabilisticModel.continuousAttentionTime = 0;
+            _probabilisticModel.disengagementLoad = 0;
+            // ✅ تصفير عدادات المستويات أيضاً
+            _alertState.lastLevel1TriggerTime = 0;
+            _alertState.lastLevel2Threshold = 0;
+            lastLevel1DistractionTime = 0;
+        }
+    }
 }
 
 function processAttentionState(s) {
@@ -1961,7 +2024,7 @@ function processAttentionState(s) {
   var modelLevel = determinePopupLevel(projectedDistractionTime, level1Window, level2Window, level3Window) || 1;
   var attentionScore = Number(s.attention_score != null ? s.attention_score : (attentive ? 85 : 45));
 
-  updateBehavioralDisengagementProbability(attentive, attentionScore, timeSinceLastUpdate, modelLevel);
+  updateProbabilisticModel(attentive, attentionScore, now, modelLevel);
 
   if (!attentive) {
     // Student is distracted
@@ -1986,44 +2049,9 @@ function processAttentionState(s) {
     _attentionState.level = newLevel;
     var targetLevel = determinePopupLevel(_probabilisticModel.totalDistractionTime, level1Window, level2Window, level3Window);
 
-    // ✅ منطق تسلسلي للمستويات الثلاثة (للإشعارات فقط، وليس لظهور الأسئلة التكيفية)
-    // المستوى 1: 3% من مدة الجلسة - يتكرر مع فاصل زمني ديناميكي (3-15 ثانية)
-    if (targetLevel === 1 && _probabilisticModel.totalDistractionTime >= level1Window) {
-      var now = Date.now();
-      var timeSinceLastLevel1 = now - _alertState.lastLevel1TriggerTime;
-      var dynamicInterval = calculateDynamicInterval(_probabilisticModel.totalDistractionTime, videoDuration, 1);
-
-      // إظهار فقط إذا مر الفاصل الزمني الديناميكي
-      if (timeSinceLastLevel1 > (dynamicInterval * 1000) || _alertState.lastLevel1TriggerTime === 0) {
-        console.log('[Distraction] Level 1 threshold reached (3% of session). Total distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Window:', level1Window.toFixed(2) + 's', 'Dynamic interval:', dynamicInterval.toFixed(2) + 's');
-        showPopupByLevel(1);
-        _alertState.lastLevel1TriggerTime = now;
-      }
-    }
-
-    // المستوى 2: 15% من مدة الجلسة - تظهر كل 15% (15%، 30%، 45%، إلخ)
-    // ✅ تم إزالة التحقق الخارجي المكرر - المنطق الداخلي في showPopupByLevel(2) يكفي
-    if (targetLevel === 2 && videoDuration > 0) {
-      // ✅ استدعاء showPopupByLevel(2) مباشرة - المنطق الداخلي سيقوم بالتحقق من العتبة والعرض
-      showPopupByLevel(2);
-    }
-
-    // المستوى 3: 45% من مدة الجلسة - تظهر مرة واحدة فقط
-    console.log('[Distraction] Checking Level 3 - targetLevel:', targetLevel, 'level3Shown:', level3Shown, 'totalDistractionTime:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'level3Window:', level3Window.toFixed(2) + 's');
-    if (targetLevel === 3 && !level3Shown) {
-      console.log('[Distraction] Level 3 threshold reached (45% of session). Total distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Window:', level3Window.toFixed(2) + 's');
-      console.log('[Distraction] level3Shown flag:', level3Shown);
-      // ✅ إظهار نافذة المستوى 3 أولاً
-      console.log('[Distraction] Calling showPopupByLevel(3)');
-      showPopupByLevel(3);
-      // ✅ ثم تعيين العلامة بعد التأكد من العرض الناجح
-      level3Shown = true;
-      _alertState.level3CheckpointShown = true; // للمزامنة
-      if (!_alertState.level3ParentNotificationSent) {
-        sendLevel3Notifications('parent');
-        _alertState.level3ParentNotificationSent = true;
-      }
-    }
+    // ✅ نظام المستويات الثلاثة مع الأولوية - استدعاء موحد
+    // يتم التحقق من العتبات والعرض داخل دالة showPopupByLevel
+    showPopupByLevel(targetLevel);
 
     // Handle alert based on duration (disabled)
     handleDistractionLevel(_attentionState.level, duration);
@@ -2046,13 +2074,17 @@ function processAttentionState(s) {
     // ✅ تراكم وقت الانتباه المستمر (لطلاب ADHD)
     _probabilisticModel.continuousAttentionTime += timeSinceLastUpdate;
 
-    // ✅ تصفير وقت التشتت فقط بعد انتباه مستمر لمدة 3 ثواني
+    // ✅ تصفير وقت التشتت والاحتمال عند استمرار الانتباه لمدة أكثر من 3 ثواني فقط
     if (_probabilisticModel.continuousAttentionTime > _probabilisticModel.sustainedAttentionThreshold) {
+      console.log('[Probabilistic] Sustained attention threshold reached (>3s). Resetting distraction time and probability.');
       _probabilisticModel.totalDistractionTime = 0;
+      _probabilisticModel.currentProbability = 0;
       _probabilisticModel.continuousAttentionTime = 0;
+      _probabilisticModel.disengagementLoad = 0;
+      // ✅ تصفير عدادات المستويات أيضاً
       _alertState.lastLevel1TriggerTime = 0;
       _alertState.lastLevel2Threshold = 0;
-      console.log('[Probabilistic] Sustained attention detected (>3s). Distraction time reset to 0');
+      lastLevel1DistractionTime = 0;
     }
 
     // Update status bar (disabled)

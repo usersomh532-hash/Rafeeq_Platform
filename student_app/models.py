@@ -426,9 +426,10 @@ class BehavioralBaseline(models.Model):
 
             self.ear_max = float(np.max(all_ear_values))
 
-            # عتبة شخصية: mean - 2*std (للكشف عن الانحرافات)
-
-            self.ear_threshold_personal = max(0.15, self.ear_mean - 2 * self.ear_std)
+            # ✅ إصلاح: استخدام 5th percentile للكشف عن انخفاض EAR (نعاس)
+            # لأن الطالب أثناء المعايرة يكون منتبهاً، نريد العتبة الدنيا الطبيعية
+            ear_5th = np.percentile(all_ear_values, 5)
+            self.ear_threshold_personal = max(0.18, ear_5th)  # أدنى 0.18 كحد أدنى معقول
 
         
 
@@ -438,7 +439,10 @@ class BehavioralBaseline(models.Model):
 
             self.head_yaw_std = float(np.std(all_yaw_values))
 
-            self.yaw_threshold_personal = self.head_yaw_mean + 2 * self.head_yaw_std
+            # ✅ إصلاح: استخدام 95th percentile بدلاً من mean + 2*std للحصول على عتبة أكثر واقعية
+            # لأن الطالب أثناء المعايرة يكون منتبهاً، لذا نحتاج عتبة تسمح بحركة طبيعية
+            yaw_95th = np.percentile(np.abs(all_yaw_values), 95)
+            self.yaw_threshold_personal = max(20.0, yaw_95th)  # أدنى 20 درجة كحد أدنى معقول
 
         
 
@@ -448,7 +452,9 @@ class BehavioralBaseline(models.Model):
 
             self.head_pitch_std = float(np.std(all_pitch_values))
 
-            self.pitch_threshold_personal = self.head_pitch_mean + 2 * self.head_pitch_std
+            # ✅ إصلاح: استخدام 95th percentile
+            pitch_95th = np.percentile(np.abs(all_pitch_values), 95)
+            self.pitch_threshold_personal = max(15.0, pitch_95th)  # أدنى 15 درجة كحد أدنى معقول
 
         
 
@@ -458,7 +464,9 @@ class BehavioralBaseline(models.Model):
 
             self.head_roll_std = float(np.std(all_roll_values))
 
-            self.roll_threshold_personal = self.head_roll_mean + 2 * self.head_roll_std
+            # ✅ إصلاح: استخدام 95th percentile
+            roll_95th = np.percentile(np.abs(all_roll_values), 95)
+            self.roll_threshold_personal = max(10.0, roll_95th)  # أدنى 10 درجات كحد أدنى معقول
 
         
 
@@ -468,7 +476,9 @@ class BehavioralBaseline(models.Model):
 
             self.gaze_horizontal_std = float(np.std(all_gaze_h_values))
 
-            self.gaze_horizontal_threshold_personal = self.gaze_horizontal_mean + 2 * self.gaze_horizontal_std
+            # ✅ إصلاح: استخدام 95th percentile
+            gaze_h_95th = np.percentile(np.abs(all_gaze_h_values), 95)
+            self.gaze_horizontal_threshold_personal = max(20.0, gaze_h_95th)  # أدنى 20 درجة كحد أدنى معقول
 
         
 
@@ -478,7 +488,9 @@ class BehavioralBaseline(models.Model):
 
             self.gaze_vertical_std = float(np.std(all_gaze_v_values))
 
-            self.gaze_vertical_threshold_personal = self.gaze_vertical_mean + 2 * self.gaze_vertical_std
+            # ✅ إصلاح: استخدام 95th percentile
+            gaze_v_95th = np.percentile(np.abs(all_gaze_v_values), 95)
+            self.gaze_vertical_threshold_personal = max(15.0, gaze_v_95th)  # أدنى 15 درجة كحد أدنى معقول
 
 
 

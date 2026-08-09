@@ -416,13 +416,15 @@ var _sessionState = {
     level1CheckpointShown: false, // المستوى 1: 3% من مدة الجلسة
     level2CheckpointShown: false, // المستوى 2: 15% من مدة الجلسة
     level3CheckpointShown: false,  // المستوى 3: 45% من مدة الجلسة
+    level1PopupShown: false, // ✅ هل تم إظهار نافذة المستوى 1
+    level2PopupShown: false, // ✅ هل تم إظهار نافذة المستوى 2
+    level3PopupShown: false, // هل تم إظهار نافذة المستوى 3
     // ✅ متغيرات لتتبع النوافذ النشطة
     activePopupLevel: 0, // 0 = لا نافذة، 1 = مستوى 1، 2 = مستوى 2، 3 = مستوى 3
     lastLevel1TriggerTime: 0, // وقت آخر ظهور للمستوى 1
     lastLevel2TriggerTime: 0, // وقت آخر ظهور للمستوى 2
     lastLevel1DistractionTime: 0, // آخر وقت تشتت ظهر فيه المستوى 1
     lastLevel2DistractionTime: 0, // آخر وقت تشتت ظهر فيه المستوى 2
-    level3PopupShown: false, // هل تم إظهار نافذة المستوى 3
     level3NotificationSent: false, // هل تم إرسال إشعار المستوى 3
     distractionTimerPaused: false, // ✅ هل تم إيقاف عداد التشتت بسبب نافذة مفتوحة
     lastLevel2Threshold: 0 // ✅ آخر عتبة تم الوصول إليها للمستوى الثاني (15%، 30%، 45%، إلخ)
@@ -1113,8 +1115,18 @@ function updateProbabilisticModel(attentive, score, now, distractionLevel) {
         // ✅ تراكم وقت الانتباه المستمر (لطلاب ADHD)
         _probabilisticModel.continuousAttentionTime += timeSinceLastUpdate;
 
-        // ✅ لا نقوم بتصفير وقت التشتت - نحفظه للاستئناف عند عودة التتبع
-        // الانتباه المستمر يساعد فقط في تقليل الاحتمال تدريجياً
+        // ✅ تصفير وقت التشتت والاحتمال عند استمرار الانتباه لمدة أكثر من 3 ثواني فقط
+        if (_probabilisticModel.continuousAttentionTime > _probabilisticModel.sustainedAttentionThreshold) {
+            console.log('[Probabilistic] Sustained attention threshold reached (>3s). Resetting distraction time and probability.');
+            _probabilisticModel.totalDistractionTime = 0;
+            _probabilisticModel.currentProbability = 0;
+            _probabilisticModel.continuousAttentionTime = 0;
+            _probabilisticModel.disengagementLoad = 0;
+            // ✅ تصفير عدادات المستويات أيضاً
+            _sessionState.lastLevel1DistractionTime = 0;
+            _sessionState.lastLevel2DistractionTime = 0;
+        }
+
         console.log('[Probabilistic] Attention detected. Probability:', _probabilisticModel.currentProbability.toFixed(3), 'Continuous distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Continuous attention time:', _probabilisticModel.continuousAttentionTime.toFixed(2) + 's');
     }
 }
@@ -1363,11 +1375,21 @@ function closePopupByLevel(level) {
             currentCheckpoint = null;
         }
     } else if (level === 2) {
+        // ✅ إيقاف صوت المساعد الذكي قبل إغلاق النافذة
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            console.log('[AI Assistant] TTS stopped on popup close');
+        }
         var aiAssistantPopup = document.getElementById('aiAssistantPopup');
         if (aiAssistantPopup) {
             aiAssistantPopup.remove();
         }
     } else if (level === 3) {
+        // ✅ إيقاف صوت المستوى الثالث قبل إغلاق النافذة
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            console.log('[Level 3] TTS stopped on popup close');
+        }
         var level3Popup = document.getElementById('level3Popup');
         if (level3Popup) {
             level3Popup.remove();
@@ -1389,72 +1411,44 @@ function feedbackForDistractionLevel(level, s, duration) {
     var level2Window = Math.max(5, Math.min(180, sessionDuration * 0.15)); // المستوى 2: أدنى 5 ثواني، أو 15% من مدة الجلسة، حد أقصى 3 دقائق (180 ثانية)
     var level3Window = Math.max(15, Math.min(720, sessionDuration * 0.45)); // المستوى 3: أدنى 15 ثانية، أو 45% من مدة الجلسة، حد أقصى 12 دقيقة (720 ثانية)
 
-    // ✅ حساب عتبات حِمل التشتت الاحتمالي (Cumulative Disengagement Evidence)
-    // عتبات حِمل التشتت = عتبة الاحتمال × النافذة الزمنية
-    var level1LoadThreshold = 0.3 * level1Window; // عتبة حِمل التشتت للمستوى 1
-    var level2LoadThreshold = 0.5 * level2Window; // عتبة حِمل التشتت للمستوى 2
-    var level3LoadThreshold = 0.7 * level3Window; // عتبة حِمل التشتت للمستوى 3
-
     // ✅ سجل تشخيصي للاحتمال التراكمي
-    console.log('[Probabilistic] currentParagraphIndex:', currentParagraphIndex, 'Probability:', _probabilisticModel.currentProbability.toFixed(3), 'Total distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Disengagement Load:', _probabilisticModel.disengagementLoad.toFixed(3), 'L1 Window:', level1Window.toFixed(2) + 's', 'L2 Window:', level2Window.toFixed(2) + 's', 'L3 Window:', level3Window.toFixed(2) + 's', 'L1 Load Threshold:', level1LoadThreshold.toFixed(3), 'L2 Load Threshold:', level2LoadThreshold.toFixed(3), 'L3 Load Threshold:', level3LoadThreshold.toFixed(3));
+    console.log('[Probabilistic] currentParagraphIndex:', currentParagraphIndex, 'Probability:', _probabilisticModel.currentProbability.toFixed(3), 'Total distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Disengagement Load:', _probabilisticModel.disengagementLoad.toFixed(3), 'L1 Window:', level1Window.toFixed(2) + 's', 'L2 Window:', level2Window.toFixed(2) + 's', 'L3 Window:', level3Window.toFixed(2) + 's');
 
-    // ✅ آلية الانتقال بين المستويات بناءً على النوافذ الزمنية + استقرار الاحتمال
+    // ✅ آلية الانتقال بين المستويات بناءً على النوافذ الزمنية فقط (بدون عتبات احتمالية معقدة)
     var distractionLevel = 1; // المستوى الافتراضي
-    var probabilityThreshold1 = 0.3; // عتبة الاحتمال للمستوى 1
-    var probabilityThreshold2 = 0.5; // عتبة الاحتمال للمستوى 2
-    var probabilityThreshold3 = 0.7; // عتبة الاحتمال للمستوى 3
 
-    // الشرط 1: استمرار ارتفاع الاحتمال فوق العتبة
-    // الشرط 2: تراكم كافٍ لحِمل التشتت داخل النافذة الزمنية
-    if (_probabilisticModel.currentProbability >= probabilityThreshold3 && _probabilisticModel.disengagementLoad >= level3LoadThreshold) {
-        distractionLevel = 3;
-    } else if (_probabilisticModel.currentProbability >= probabilityThreshold2 && _probabilisticModel.disengagementLoad >= level2LoadThreshold) {
-        distractionLevel = 2;
-    } else if (_probabilisticModel.currentProbability >= probabilityThreshold1 && _probabilisticModel.disengagementLoad >= level1LoadThreshold) {
-        distractionLevel = 1;
+    // ✅ تحديد المستوى بناءً على استمرار التشتت (الوقت المتواصل)
+    if (_probabilisticModel.totalDistractionTime >= level3Window) {
+        distractionLevel = 3; // المستوى 3: استمرار التشتت لمدة 45% من مدة الجلسة
+    } else if (_probabilisticModel.totalDistractionTime >= level2Window) {
+        distractionLevel = 2; // المستوى 2: استمرار التشتت لمدة 15% من مدة الجلسة
+    } else if (_probabilisticModel.totalDistractionTime >= level1Window) {
+        distractionLevel = 1; // المستوى 1: استمرار التشتت لمدة 3% من مدة الجلسة
     }
 
     // ✅ نظام المستويات الثلاثة مع الأولوية
     // تحديد المستوى الذي يجب أن يظهر بناءً على نسبة التشتت
     var targetLevel = determinePopupLevel(_probabilisticModel.totalDistractionTime, level1Window, level2Window, level3Window);
-    
+
     console.log('[Popup] Current distraction time:', _probabilisticModel.totalDistractionTime.toFixed(2) + 's', 'Target level:', targetLevel, 'Active level:', getActivePopupLevel());
 
-    // ✅ منطق المستوى الأول: سؤال تكيّفي يظهر عند 3% و 9% (3% + 6% أخرى) من مدة الجلسة
-    if (targetLevel >= 1 && currentParagraphIndex >= 0 && level !== 'none') {
+    // ✅ منطق المستوى الأول: سؤال تكيّفي يظهر عند 3% فقط من مدة الجلسة (مرة واحدة)
+    if (targetLevel === 1 && !_sessionState.level1PopupShown && currentParagraphIndex >= 0 && level !== 'none') {
         var checkpoint = checkpointsMap[currentParagraphIndex];
-        
-        // ✅ تكرار الأسئلة التكيفية عند 3% و 9% فقط من مدة الجلسة (3% + 6%)
-        // حساب عدد مرات الوصول إلى 3% من مدة الجلسة
-        var level1Multiplier = Math.floor(_probabilisticModel.totalDistractionTime / level1Window);
-        var lastLevel1Multiplier = Math.floor(_sessionState.lastLevel1DistractionTime / level1Window);
-        
-        // ✅ إظهار السؤال التكيفي فقط عند 3% (multiplier=1) و 9% (multiplier=3)
-        // لا تظهر عند 6% (multiplier=2) أو 12% (multiplier=4)
         if (checkpoint && checkpoint.checkpoint_type === 'adaptive' && !checkpointAnswered[currentParagraphIndex]) {
-            if (level1Multiplier > lastLevel1Multiplier && (level1Multiplier === 1 || level1Multiplier === 3)) {
-                console.log('[Popup] Level 1 threshold reached (' + (level1Multiplier * 3) + '% of session). Showing adaptive checkpoint.');
-                showPopupByLevel(1, currentParagraphIndex);
-                _sessionState.lastLevel1DistractionTime = _probabilisticModel.totalDistractionTime;
-            }
+            console.log('[Popup] Level 1 threshold reached (3% of session). Showing adaptive checkpoint.');
+            showPopupByLevel(1, currentParagraphIndex);
+            _sessionState.level1PopupShown = true;
+            _sessionState.lastLevel1DistractionTime = _probabilisticModel.totalDistractionTime;
         }
     }
 
-    // ✅ منطق المستوى الثاني: نافذة توجيهية تظهر عند 15% و 30% فقط من مدة الجلسة
-    if (targetLevel === 2) {
-        var level2Window = Math.max(5, sessionDuration * 0.15); // المستوى 2: 15% من مدة الجلسة
-
-        // حساب عدد مرات الوصول إلى 15% من مدة الجلسة
-        var level2Multiplier = Math.floor(_probabilisticModel.totalDistractionTime / level2Window);
-        var lastLevel2Multiplier = Math.floor(_sessionState.lastLevel2DistractionTime / level2Window);
-
-        // ✅ إظهار نافذة المساعد الذكي فقط عند 15% (multiplier=1) و 30% (multiplier=2)
-        // لا تظهر عند 45% (multiplier=3) أو 60% (multiplier=4)
-        if (level2Multiplier > lastLevel2Multiplier && (level2Multiplier === 1 || level2Multiplier === 2)) {
-            console.log('[Popup] Level 2 threshold reached (' + (level2Multiplier * 15) + '% of session). Showing AI Assistant popup.');
-            showPopupByLevel(2, currentParagraphIndex);
-            _sessionState.lastLevel2DistractionTime = _probabilisticModel.totalDistractionTime;
-        }
+    // ✅ منطق المستوى الثاني: نافذة توجيهية تظهر عند 15% فقط من مدة الجلسة (مرة واحدة)
+    if (targetLevel === 2 && !_sessionState.level2PopupShown) {
+        console.log('[Popup] Level 2 threshold reached (15% of session). Showing AI Assistant popup.');
+        showPopupByLevel(2, currentParagraphIndex);
+        _sessionState.level2PopupShown = true;
+        _sessionState.lastLevel2DistractionTime = _probabilisticModel.totalDistractionTime;
     }
 
     // ✅ منطق المستوى الثالث: نافذة تعليمات ونصائح عند 45% (تظهر مرة واحدة فقط)
@@ -2463,17 +2457,6 @@ function selectCheckpointAnswer(answer) {
     // Check if answer is correct (compare with correct_answer from checkpoint)
     var isCorrect = (answer === currentCheckpoint.correct_answer);
     console.log('[Checkpoint] Answer is correct:', isCorrect);
-
-    // ✅ تصفير وقت التشتت عند الإجابة الصحيحة على السؤال التكيفي
-    // الاعتماد على الانتباه المستمر (3 ثواني) لتصفير وقت التشتت أيضاً
-    if (isCorrect) {
-        _probabilisticModel.totalDistractionTime = 0;
-        _probabilisticModel.continuousAttentionTime = 0;
-        // ✅ تصفير عدادات المستويات عند الإجابة الصحيحة
-        _sessionState.lastLevel1DistractionTime = 0;
-        _sessionState.lastLevel2DistractionTime = 0;
-        console.log('[Checkpoint] Correct answer - distraction time and level counters reset to 0');
-    }
 
     // ✅ تحديث النموذج الاحتمالي بناءً على الإشارة المعرفية
     updateCognitiveSignal(isCorrect, Date.now());
