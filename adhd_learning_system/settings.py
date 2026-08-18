@@ -105,20 +105,15 @@ if IS_ON_RENDER:
     DATABASES = {
         'default': dj_database_url.config(
             default=os.environ.get('DATABASE_URL'),
-            conn_max_age=0,  # ✅ تغيير من 600 إلى 0 لمنع إعادة استخدام الاتصالات المغلقة
-            conn_health_checks=True,
-            ssl_require=True,  # ✅ SSL requirement لقاعدة البيانات على Render
+            conn_max_age=600,           # ✅ إبقاء الاتصال حياً لمنع إعادة الفتح والتشفير مع كل استعلام
+            conn_health_checks=True,    # ✅ التأكد من سلامة القناة قبل التنفيذ
         )
     }
     # ✅ إضافة خيارات الاتصال الإضافية لـ PostgreSQL بشكل منفصل
-    # خيارات التشفير والـ Keepalive لمنع السيرفر من قطع الـ Socket
+    # ✅ استخدام prefer يمنع قطع الـ SSL القسري من جدار حماية Render
     DATABASES['default']['OPTIONS'] = {
-        'sslmode': 'require',
+        'sslmode': 'prefer',            # ✅ استخدام prefer بدلاً من require لتجنب قطع SSL القسري
         'connect_timeout': 10,
-        'keepalives': 1,
-        'keepalives_idle': 10,      # ✅ تقليل من 30 إلى 10
-        'keepalives_interval': 5,   # ✅ تقليل من 10 إلى 5
-        'keepalives_count': 3,      # ✅ تقليل من 5 إلى 3
     }
 else:
     DATABASES = {
@@ -129,17 +124,13 @@ else:
             'PASSWORD': os.environ.get('DB_PASSWORD', ''),
             'HOST':     os.environ.get('DB_HOST', 'localhost'),
             'PORT':     os.environ.get('DB_PORT', '5432'),
-            'CONN_MAX_AGE': 0,  # ✅ تغيير من 600 إلى 0 لمنع إعادة استخدام الاتصالات المغلقة
-            'CONN_HEALTH_CHECKS': True,
+            'CONN_MAX_AGE': 600,          # ✅ إبقاء الاتصال حياً لمنع إعادة الفتح والتشفير مع كل استعلام
+            'CONN_HEALTH_CHECKS': True,    # ✅ التأكد من سلامة القناة قبل التنفيذ
         }
     }
     # ✅ إضافة خيارات الاتصال الإضافية لـ PostgreSQL بشكل منفصل
     DATABASES['default']['OPTIONS'] = {
         'connect_timeout': 10,
-        'keepalives': 1,
-        'keepalives_idle': 10,      # ✅ تقليل من 30 إلى 10
-        'keepalives_interval': 5,   # ✅ تقليل من 10 إلى 5
-        'keepalives_count': 3,      # ✅ تقليل من 5 إلى 3
     }
 
 # ✅ تم إزالة الإعدادات العامة لـ OPTIONS لأنها الآن مُحددة في كل قاعدة بيانات على حدة
