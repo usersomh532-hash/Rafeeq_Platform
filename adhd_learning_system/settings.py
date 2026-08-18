@@ -108,15 +108,16 @@ if IS_ON_RENDER:
             conn_max_age=0,  # ✅ تغيير من 600 إلى 0 لمنع إعادة استخدام الاتصالات المغلقة
             conn_health_checks=True,
             ssl_require=True,  # ✅ SSL requirement لقاعدة البيانات على Render
-            options={
-                'sslmode': 'require',
-                'connect_timeout': 10,
-                'keepalives': 1,
-                'keepalives_idle': 30,
-                'keepalives_interval': 10,
-                'keepalives_count': 5,
-            }
         )
+    }
+    # ✅ إضافة خيارات الاتصال الإضافية لـ PostgreSQL بشكل منفصل
+    DATABASES['default']['OPTIONS'] = {
+        'sslmode': 'require',
+        'connect_timeout': 10,
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5,
     }
 else:
     DATABASES = {
@@ -129,14 +130,15 @@ else:
             'PORT':     os.environ.get('DB_PORT', '5432'),
             'CONN_MAX_AGE': 0,  # ✅ تغيير من 600 إلى 0 لمنع إعادة استخدام الاتصالات المغلقة
             'CONN_HEALTH_CHECKS': True,
-            'OPTIONS': {
-                'connect_timeout': 10,
-                'keepalives': 1,
-                'keepalives_idle': 30,
-                'keepalives_interval': 10,
-                'keepalives_count': 5,
-            }
         }
+    }
+    # ✅ إضافة خيارات الاتصال الإضافية لـ PostgreSQL بشكل منفصل
+    DATABASES['default']['OPTIONS'] = {
+        'connect_timeout': 10,
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5,
     }
 
 # ✅ تم إزالة الإعدادات العامة لـ OPTIONS لأنها الآن مُحددة في كل قاعدة بيانات على حدة
