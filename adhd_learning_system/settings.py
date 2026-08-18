@@ -105,9 +105,17 @@ if IS_ON_RENDER:
     DATABASES = {
         'default': dj_database_url.config(
             default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600,
+            conn_max_age=0,  # ✅ تغيير من 600 إلى 0 لمنع إعادة استخدام الاتصالات المغلقة
             conn_health_checks=True,
-            ssl_require=True,  # ✅ إضافة SSL requirement لقاعدة البيانات على Render
+            ssl_require=True,  # ✅ SSL requirement لقاعدة البيانات على Render
+            options={
+                'sslmode': 'require',
+                'connect_timeout': 10,
+                'keepalives': 1,
+                'keepalives_idle': 30,
+                'keepalives_interval': 10,
+                'keepalives_count': 5,
+            }
         )
     }
 else:
@@ -119,13 +127,19 @@ else:
             'PASSWORD': os.environ.get('DB_PASSWORD', ''),
             'HOST':     os.environ.get('DB_HOST', 'localhost'),
             'PORT':     os.environ.get('DB_PORT', '5432'),
-            'CONN_MAX_AGE': 600,
+            'CONN_MAX_AGE': 0,  # ✅ تغيير من 600 إلى 0 لمنع إعادة استخدام الاتصالات المغلقة
+            'CONN_HEALTH_CHECKS': True,
+            'OPTIONS': {
+                'connect_timeout': 10,
+                'keepalives': 1,
+                'keepalives_idle': 30,
+                'keepalives_interval': 10,
+                'keepalives_count': 5,
+            }
         }
     }
 
-# التعديل: رفع مهلة الاتصال إلى 30 ثانية لتفادي الـ 502 الناتجة عن ضغط السيرفر
-DATABASES['default'].setdefault('OPTIONS', {})
-DATABASES['default']['OPTIONS']['connect_timeout'] = 30
+# ✅ تم إزالة الإعدادات العامة لـ OPTIONS لأنها الآن مُحددة في كل قاعدة بيانات على حدة
 
 # ── كلمات المرور ─────────────────────────────────────────────
 AUTH_PASSWORD_VALIDATORS = [
