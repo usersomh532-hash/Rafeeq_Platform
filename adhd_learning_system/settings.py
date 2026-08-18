@@ -107,6 +107,7 @@ if IS_ON_RENDER:
             default=os.environ.get('DATABASE_URL'),
             conn_max_age=600,
             conn_health_checks=True,
+            ssl_require=True,  # ✅ إضافة SSL requirement لقاعدة البيانات على Render
         )
     }
 else:
