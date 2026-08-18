@@ -111,13 +111,14 @@ if IS_ON_RENDER:
         )
     }
     # ✅ إضافة خيارات الاتصال الإضافية لـ PostgreSQL بشكل منفصل
+    # خيارات التشفير والـ Keepalive لمنع السيرفر من قطع الـ Socket
     DATABASES['default']['OPTIONS'] = {
         'sslmode': 'require',
         'connect_timeout': 10,
         'keepalives': 1,
-        'keepalives_idle': 30,
-        'keepalives_interval': 10,
-        'keepalives_count': 5,
+        'keepalives_idle': 10,      # ✅ تقليل من 30 إلى 10
+        'keepalives_interval': 5,   # ✅ تقليل من 10 إلى 5
+        'keepalives_count': 3,      # ✅ تقليل من 5 إلى 3
     }
 else:
     DATABASES = {
@@ -136,9 +137,9 @@ else:
     DATABASES['default']['OPTIONS'] = {
         'connect_timeout': 10,
         'keepalives': 1,
-        'keepalives_idle': 30,
-        'keepalives_interval': 10,
-        'keepalives_count': 5,
+        'keepalives_idle': 10,      # ✅ تقليل من 30 إلى 10
+        'keepalives_interval': 5,   # ✅ تقليل من 10 إلى 5
+        'keepalives_count': 3,      # ✅ تقليل من 5 إلى 3
     }
 
 # ✅ تم إزالة الإعدادات العامة لـ OPTIONS لأنها الآن مُحددة في كل قاعدة بيانات على حدة
@@ -177,14 +178,12 @@ MEDIA_ROOT       = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── Cache — لـ Rate Limiting و Sessions ──────────────────────
-# [DB-FIX] ملاحظة: بما إنه الـ cache backend هون db-backed، أي بطء بقاعدة
-# البيانات (خصوصاً لو بعيدة) بينعكس مباشرة على كل rate-limit/session check.
-# بعد تفعيل قاعدة البيانات المحلية بالتطوير أعلاه، هاد البند بيصير سريع تلقائياً.
+# ✅ تحويل الكاش إلى LocMemCache لحماية تسجيل الدخول من الاعتماد على قاعدة البيانات
+# هذا ينهي مشكلة OperationalError أثناء فحص Rate Limit عبر LoginRateLimitMiddleware
 CACHES = {
     'default': {
-        'BACKEND':  'django.core.cache.backends.db.DatabaseCache',
-        'LOCATION': 'django_cache_table',
-        'TIMEOUT':  300,
+        'BACKEND':  'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
     }
 }
 AUTH_USER_MODEL    = 'learning.User'
